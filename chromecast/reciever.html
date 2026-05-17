@@ -1,18 +1,78 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <!-- Load the Cast Receiver Framework -->
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
-</head>
+  
+  <!-- Basic styling for the player -->
+  <style>
+      body {
+        background-color: #000;
+        margin: 0;
+        overflow: hidden;
+      }
+      cast-media-player {
+        /* Customize the progress bar color (this is a nice blue) */
+        --theme-hue: 210; 
+        
+        /* Shows idle.png when the Chromecast is sitting idle (no media loaded) */
+        --background-image: url("idle.png");
+        
+        /* Shows idle.png while the video is actively loading/buffering. 
+           It automatically fades out once the first frame of the video renders. */
+        --splash-image: url("idle.png"); 
+        
+        /* Optional: Make the image cover the whole screen beautifully */
+        --background-size: cover;
+      }
+    </style>
+  </head>
 <body>
+  <!-- The UI element that displays the video and default cast controls -->
   <cast-media-player></cast-media-player>
+
   <script>
     const context = cast.framework.CastReceiverContext.getInstance();
     const playerManager = context.getPlayerManager();
+
+    // 1. Configure Playback Settings for MKV and Torrents
+    const playbackConfig = new cast.framework.PlaybackConfig();
     
-    // Optional: You can configure Shaka Player explicitly here to force it 
-    // to tolerate MKVs, ignore CORS issues, or tweak buffer sizes.
+    // Auto-select text tracks even if the format isn't fully recognized upfront
+    playbackConfig.autoSelectOnUnknownTextTrackFormat = true;
     
-    context.start();
+    // Force Shaka Player (the underlying engine) to be more tolerant of torrent streams
+    playbackConfig.shakaConfig = {
+      streaming: {
+        bufferingGoal: 30, // Buffer 30 seconds ahead (great for TorBox streams)
+        rebufferingGoal: 10, // Wait for 10 seconds of buffer before resuming if stalled
+        jumpLargeGaps: true // Skip over corrupted data chunks in MKVs instead of freezing
+      }
+    };
+
+    // 2. Intercept the Load Request to ensure MIME types are set
+    // The Chromecast needs to know it's an MKV to trigger the correct parser
+    playerManager.setMessageInterceptor(
+      cast.framework.messages.MessageType.LOAD,
+      (request) => {
+        if (request.media && request.media.contentId) {
+          const url = request.media.contentId.toLowerCase();
+          
+          // If the phone forgot to send a MIME type, force it based on the URL
+          if (!request.media.contentType) {
+            if (url.includes('.mkv')) {
+              request.media.contentType = 'video/x-matroska';
+            } else if (url.includes('.mp4')) {
+              request.media.contentType = 'video/mp4';
+            }
+          }
+        }
+        return request;
+      }
+    );
+
+    // 3. Start the Receiver Context with our custom config
+    context.start({ playbackConfig: playbackConfig });
   </script>
 </body>
 </html>
