@@ -1,32 +1,33 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!-- Load the Cast Receiver Framework -->
+  <!-- Force the viewport scale to exactly 1.0 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
   
-  <!-- Basic styling for the player -->
   <style>
-      body {
-        background-color: #000;
-        margin: 0;
-        overflow: hidden;
-      }
-      cast-media-player {
-        /* Customize the progress bar color (this is a nice blue) */
-        --theme-hue: 210; 
-        
-        /* Shows idle.png when the Chromecast is sitting idle (no media loaded) */
-        --background-image: url("idle.png");
-        
-        /* Shows idle.png while the video is actively loading/buffering. 
-           It automatically fades out once the first frame of the video renders. */
-        --splash-image: url("idle.png"); 
-        
-        /* Optional: Make the image cover the whole screen beautifully */
-        --background-size: cover;
-      }
-    </style>
-  </head>
+    /* Lock the body strictly to the TV's dimensions */
+    body {
+      background-color: #000;
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+    
+    /* Force the player to fit perfectly inside the body */
+    cast-media-player {
+      --theme-hue: 210; 
+      --background-image: url("idle.png");
+      --splash-image: url("idle.png"); 
+      --background-size: cover;
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+  </style>
 <body>
   <!-- The UI element that displays the video and default cast controls -->
   <cast-media-player></cast-media-player>
