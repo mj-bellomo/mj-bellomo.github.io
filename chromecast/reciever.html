@@ -1,13 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!-- Force the viewport scale to exactly 1.0 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
   
   <style>
-    /* Lock the body strictly to the TV's dimensions */
     body {
       background-color: #000;
       margin: 0;
@@ -15,64 +12,71 @@
       width: 100vw;
       height: 100vh;
       overflow: hidden;
+      
+      /* 1. Put the image directly on the body so it NEVER animates */
+      background-image: url("idle.png");
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
     }
     
-    /* Force the player to fit perfectly inside the body */
     cast-media-player {
       --theme-hue: 210; 
-      --background-image: url("idle.png");
-      --splash-image: url("idle.png"); 
-      --background-size: cover;
+      
+      /* 2. Make Google's background completely transparent so your body image shows through */
+      --background-color: transparent;
+      --splash-color: transparent;
+      --background-image: none;
+      --splash-image: none;
+      
       width: 100%;
       height: 100%;
       display: block;
     }
   </style>
+</head>
 <body>
-  <!-- The UI element that displays the video and default cast controls -->
+  <!-- The UI element that displays the video -->
   <cast-media-player></cast-media-player>
 
   <script>
     const context = cast.framework.CastReceiverContext.getInstance();
     const playerManager = context.getPlayerManager();
 
-    // 1. Configure Playback Settings for MKV and Torrents
     const playbackConfig = new cast.framework.PlaybackConfig();
-    
-    // Auto-select text tracks even if the format isn't fully recognized upfront
     playbackConfig.autoSelectOnUnknownTextTrackFormat = true;
-    
-    // Force Shaka Player (the underlying engine) to be more tolerant of torrent streams
     playbackConfig.shakaConfig = {
       streaming: {
-        bufferingGoal: 30, // Buffer 30 seconds ahead (great for TorBox streams)
-        rebufferingGoal: 10, // Wait for 10 seconds of buffer before resuming if stalled
-        jumpLargeGaps: true // Skip over corrupted data chunks in MKVs instead of freezing
+        bufferingGoal: 30,
+        rebufferingGoal: 10,
+        jumpLargeGaps: true
       }
     };
 
-    // 2. Intercept the Load Request to ensure MIME types are set
-    // The Chromecast needs to know it's an MKV to trigger the correct parser
     playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.LOAD,
       (request) => {
         if (request.media && request.media.contentId) {
           const url = request.media.contentId.toLowerCase();
-          
-          // If the phone forgot to send a MIME type, force it based on the URL
           if (!request.media.contentType) {
-            if (url.includes('.mkv')) {
-              request.media.contentType = 'video/x-matroska';
-            } else if (url.includes('.mp4')) {
-              request.media.contentType = 'video/mp4';
-            }
+            if (url.includes('.mkv')) request.media.contentType = 'video/x-matroska';
+            else if (url.includes('.mp4')) request.media.contentType = 'video/mp4';
           }
         }
         return request;
       }
     );
 
-    // 3. Start the Receiver Context with our custom config
+    // Hide the body background once the video actually starts playing!
+    playerManager.addEventListener(cast.framework.events.EventType.PLAYING, () => {
+      document.body.style.backgroundImage = 'none';
+    });
+    
+    // Bring it back if the video stops
+    playerManager.addEventListener(cast.framework.events.EventType.MEDIA_FINISHED, () => {
+      document.body.style.backgroundImage = 'url("idle.png")';
+    });
+
     context.start({ playbackConfig: playbackConfig });
   </script>
 </body>
