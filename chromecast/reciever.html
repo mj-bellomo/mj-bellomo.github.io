@@ -65,9 +65,21 @@
     const SUBTITLE_TIMEOUT_MS = 2500;
     const subtitleCache = new Map(); // source URL -> blob: URL (for retries)
 
+    // No background box: white text with a thin black outline, which stays
+    // readable over bright scenes without covering the picture. Colours are
+    // #RRGGBBAA. Used unless the sender asks for a style of its own.
+    const SUBTITLE_STYLE = {
+      backgroundColor: '#00000000',
+      foregroundColor: '#FFFFFFFF',
+      edgeType: 'OUTLINE',
+      edgeColor: '#000000FF',
+      windowType: 'NONE',
+      fontScale: 1.0,
+    };
+
     function srtToVtt(text) {
       const body = text
-        .replace(/^﻿/, '')
+        .replace(/^\uFEFF/, '')
         .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
         // SSA override codes ({\an8}) and <font> tags would show as text.
         .replace(/\{\\[^}]*\}/g, '')
@@ -123,6 +135,8 @@
         }
 
         if (request.media) {
+          request.media.textTrackStyle =
+            request.media.textTrackStyle || SUBTITLE_STYLE;
           const textTracks = await prepareTextTracks(request.media);
           // A subtitle sent with the video is one the user just picked, so
           // show it right away instead of waiting for a separate track change.
