@@ -3,7 +3,7 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
-  
+
   <style>
     body {
       background-color: #000;
@@ -12,23 +12,23 @@
       width: 100vw;
       height: 100vh;
       overflow: hidden;
-      
+
       /* 1. Put the image directly on the body so it NEVER animates */
       background-image: url("idle.png");
       background-size: cover;
       background-position: center;
       background-repeat: no-repeat;
     }
-    
+
     cast-media-player {
-      --theme-hue: 210; 
-      
+      --theme-hue: 210;
+
       /* 2. Make Google's background completely transparent so your body image shows through */
       --background-color: transparent;
       --splash-color: transparent;
       --background-image: none;
       --splash-image: none;
-      
+
       width: 100%;
       height: 100%;
       display: block;
@@ -53,14 +53,82 @@
       }
     };
 
+    // --- Subtitles ---------------------------------------------------------
+    // The sender passes each subtitle's own HTTPS link (usually SRT). This
+    // page fetches it itself, converts it to WebVTT (the only sidecar format
+    // the player reads) and hands the player a local blob: URL. Fetching here
+    // also avoids plain-HTTP links: this page is HTTPS, so Chrome blocks
+    // HTTP requests such as the phone's local server (mixed content).
+
+    // The sender treats a load as dropped if nothing happens within ~3s and
+    // retries, so don't let a slow subtitle host hold the load up that long.
+    const SUBTITLE_TIMEOUT_MS = 2500;
+    const subtitleCache = new Map(); // source URL -> blob: URL (for retries)
+
+    function srtToVtt(text) {
+      const body = text
+        .replace(/^﻿/, '')
+        .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
+        // SSA override codes ({\an8}) and <font> tags would show as text.
+        .replace(/\{\\[^}]*\}/g, '')
+        .replace(/<\/?font[^>]*>/gi, '');
+      return 'WEBVTT\n\n' + body;
+    }
+
+    async function toVttBlobUrl(url) {
+      if (subtitleCache.has(url)) return subtitleCache.get(url);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), SUBTITLE_TIMEOUT_MS);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        let text = await response.text();
+        if (!text.trimStart().startsWith('WEBVTT')) text = srtToVtt(text);
+        const blobUrl = URL.createObjectURL(new Blob([text], { type: 'text/vtt' }));
+        subtitleCache.set(url, blobUrl);
+        return blobUrl;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    // Swaps every text track for a WebVTT blob: URL. Tracks that can't be
+    // fetched are dropped so a bad subtitle can't break playback of the video.
+    async function prepareTextTracks(media) {
+      const TEXT = cast.framework.messages.TrackType.TEXT;
+      const textTracks = (media.tracks || []).filter((t) => t.type === TEXT);
+      const failed = new Set();
+      await Promise.all(textTracks.map(async (track) => {
+        try {
+          track.trackContentId = await toVttBlobUrl(track.trackContentId);
+          track.trackContentType = 'text/vtt';
+        } catch (e) {
+          console.warn('Subtitle unavailable:', track.trackContentId, e);
+          failed.add(track);
+        }
+      }));
+      if (failed.size) media.tracks = media.tracks.filter((t) => !failed.has(t));
+      return textTracks.filter((t) => !failed.has(t));
+    }
+
     playerManager.setMessageInterceptor(
       cast.framework.messages.MessageType.LOAD,
-      (request) => {
+      async (request) => {
         if (request.media && request.media.contentId) {
           const url = request.media.contentId.toLowerCase();
           if (!request.media.contentType) {
             if (url.includes('.mkv')) request.media.contentType = 'video/x-matroska';
             else if (url.includes('.mp4')) request.media.contentType = 'video/mp4';
+          }
+        }
+
+        if (request.media) {
+          const textTracks = await prepareTextTracks(request.media);
+          // A subtitle sent with the video is one the user just picked, so
+          // show it right away instead of waiting for a separate track change.
+          const active = request.activeTrackIds || [];
+          if (textTracks.length === 1 && active.length === 0) {
+            request.activeTrackIds = [textTracks[0].trackId];
           }
         }
         return request;
@@ -71,7 +139,7 @@
     playerManager.addEventListener(cast.framework.events.EventType.PLAYING, () => {
       document.body.style.backgroundImage = 'none';
     });
-    
+
     // Bring it back if the video stops
     playerManager.addEventListener(cast.framework.events.EventType.MEDIA_FINISHED, () => {
       document.body.style.backgroundImage = 'url("idle.png")';
